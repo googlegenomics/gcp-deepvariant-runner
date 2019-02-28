@@ -1,0 +1,35 @@
+substitutions:
+    _PUBLIC_PROJECT_ID: cloud-genomics-pipelines
+
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'pull-image'
+  args:
+    - 'pull'
+    - 'gcr.io/${PROJECT_ID}/gcp-deepvariant-runner:${COMMIT_SHA}'
+
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'tag-image-with-hash'
+  args:
+    - 'tag'
+    - 'gcr.io/${PROJECT_ID}/gcp-deepvariant-runner:${COMMIT_SHA}'
+    - 'gcr.io/${_PUBLIC_PROJECT_ID}/gcp-deepvariant-runner:${COMMIT_SHA}'
+
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'tag-image-with-version'
+  args:
+    - 'tag'
+    - 'gcr.io/${PROJECT_ID}/gcp-deepvariant-runner:${COMMIT_SHA}'
+    - 'gcr.io/${_PUBLIC_PROJECT_ID}/gcp-deepvariant-runner:${TAG_NAME}'
+
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'tag-image-with-latest'
+  args:
+    - 'tag'
+    - 'gcr.io/${PROJECT_ID}/gcp-deepvariant-runner:${COMMIT_SHA}'
+    - 'gcr.io/${_PUBLIC_PROJECT_ID}/gcp-deepvariant-runner:latest'
+
+images:
+  - 'gcr.io/${_PUBLIC_PROJECT_ID}/gcp-deepvariant-runner:${COMMIT_SHA}'
+  - 'gcr.io/${_PUBLIC_PROJECT_ID}/gcp-deepvariant-runner:${TAG_NAME}'
+  - 'gcr.io/${_PUBLIC_PROJECT_ID}/gcp-deepvariant-runner:latest'

@@ -1,0 +1,43 @@
+substitutions:
+    _MODEL: gs://deepvariant/models/DeepVariant/0.7.2/DeepVariant-inception_v3-0.7.2+data-wgs_standard
+
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'build-image'
+  args: [ 'build', '-t', 'gcr.io/${PROJECT_ID}/gcp-deepvariant-runner:${COMMIT_SHA}', '.' ]
+
+- name: 'gcr.io/cloud-builders/docker'
+  id: 'push-image'
+  args: [ 'push' , 'gcr.io/${PROJECT_ID}/gcp-deepvariant-runner:${COMMIT_SHA}' ]
+
+- name: 'gcr.io/${PROJECT_ID}/gcp-deepvariant-runner:${COMMIT_SHA}'
+  id: 'test-image-cpu'
+  args:
+    - 'bash'
+    - '/opt/deepvariant_runner/bin/run_and_verify.sh'
+    - '${PROJECT_ID}'
+    - '${COMMIT_SHA}'
+    - '${_MODEL}'
+    - 'cpu'
+
+- name: 'gcr.io/${PROJECT_ID}/gcp-deepvariant-runner:${COMMIT_SHA}'
+  id: 'test-image-gpu'
+  args:
+    - 'bash'
+    - '/opt/deepvariant_runner/bin/run_and_verify.sh'
+    - '${PROJECT_ID}'
+    - '${COMMIT_SHA}'
+    - '${_MODEL}'
+    - 'gpu'
+
+- name: 'gcr.io/${PROJECT_ID}/gcp-deepvariant-runner:${COMMIT_SHA}'
+  id: 'test-image-tpu'
+  args:
+    - 'bash'
+    - '/opt/deepvariant_runner/bin/run_and_verify.sh'
+    - '${PROJECT_ID}'
+    - '${COMMIT_SHA}'
+    - '${_MODEL}'
+    - 'tpu'
+
+timeout: 2h
