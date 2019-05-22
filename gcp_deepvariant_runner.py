@@ -256,7 +256,8 @@ def _is_valid_gcs_path(gcs_path):
   Args:
     gcs_path: (str) a path to directory or an obj on GCS.
   """
-  return urlparse.urlparse(gcs_path).scheme == 'gs'
+  return (urlparse.urlparse(gcs_path).scheme == 'gs' and
+          urlparse.urlparse(gcs_path).netloc != '')
 
 
 def _gcs_object_exist(gcs_obj_path):

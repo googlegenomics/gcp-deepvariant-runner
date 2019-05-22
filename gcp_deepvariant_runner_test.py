@@ -521,5 +521,44 @@ class DeepvariantRunnerTest(unittest.TestCase):
       gcp_deepvariant_runner.run(self._argv)
 
 
+class GcsUtilsTest(unittest.TestCase):
+
+  def testIsValidGcsPath(self):
+    invalid_paths = ['gs://', '://bucket', 'gs//bucket', 'gs:/bucket']
+    for path in invalid_paths:
+      self.assertEqual(gcp_deepvariant_runner._is_valid_gcs_path(path), False)
+
+    valid_paths = ['gs://bucket/', 'gs://bucket/obj', 'gs://bucket/dir/obj']
+    for path in valid_paths:
+      self.assertEqual(gcp_deepvariant_runner._is_valid_gcs_path(path), True)
+
+  def testGetGcsBucket(self):
+    invalid_paths = ['gs://', '://bucket', 'gs//bucket', 'gs:/bucket']
+    for path in invalid_paths:
+      with self.assertRaisesRegexp(
+          ValueError, 'Invalid GCS path provided: %s' % path):
+        gcp_deepvariant_runner._get_gcs_bucket(path)
+
+    valid_paths = ['gs://bucket/', 'gs://bucket/obj', 'gs://bucket/dir/obj']
+    for path in valid_paths:
+      self.assertEqual(gcp_deepvariant_runner._get_gcs_bucket(path), 'bucket')
+
+  def testGetGcsRelativePath(self):
+    invalid_paths = ['gs://', '://bucket', 'gs//bucket', 'gs:/bucket']
+    for path in invalid_paths:
+      with self.assertRaisesRegexp(
+          ValueError, 'Invalid GCS path provided: %s' % path):
+        gcp_deepvariant_runner._get_gcs_relative_path(path)
+
+    paths_objects = {'gs://bucket': '',
+                     'gs://bucket/': '',
+                     'gs://bucket/obj': 'obj',
+                     'gs://bucket/obj/': 'obj',
+                     'gs://bucket/dir/obj': 'dir/obj',
+                     'gs://bucket/dir/obj/': 'dir/obj'}
+    for path, obj in paths_objects.items():
+      self.assertEqual(gcp_deepvariant_runner._get_gcs_relative_path(path), obj)
+
+
 if __name__ == '__main__':
   unittest.main()
