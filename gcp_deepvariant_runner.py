@@ -55,6 +55,7 @@ import datetime
 import logging
 import multiprocessing
 import os
+import re
 import subprocess
 import urlparse
 import uuid
@@ -321,6 +322,16 @@ def _get_gcs_relative_path(gcs_path):
     raise ValueError('Invalid GCS path provided: %s' % gcs_path)
   return urlparse.urlparse(gcs_path).path.strip('/')
 
+
+def _meets_gcp_label_restrictions(label):
+  """Does given string meet GCP label restrictions?"""
+  max_label_len = 63
+  max_suffix_len = max(len(_MAKE_EXAMPLES_JOB_NAME),
+                       len(_CALL_VARIANTS_JOB_NAME),
+                       len(_POSTPROCESS_VARIANTS_JOB_NAME))
+  max_repetition = max_label_len - max_suffix_len - 1
+  return re.match(re.compile(r'^[a-z][a-z0-9_-]{,%d}$' % max_repetition),
+                  label) is not None
 
 def _run_make_examples(pipeline_args):
   """Runs the make_examples job."""
@@ -614,6 +625,11 @@ def _run_postprocess_variants(pipeline_args):
 def _validate_and_complete_args(pipeline_args):
   """Validates pipeline arguments and fills some missing args (if any)."""
   # Basic validation logic. More detailed validation is done by pipelines API.
+  if (pipeline_args.job_name_prefix and
+      not _meets_gcp_label_restrictions(pipeline_args.job_name_prefix)):
+    raise ValueError(
+        '--job_name_prefix must meet GCP label restrictions: {}'.format(
+            pipeline_args.job_name_prefix))
   if pipeline_args.preemptible and pipeline_args.max_preemptible_tries <= 0:
     raise ValueError('--max_preemptible_tries must be greater than zero.')
   if pipeline_args.max_non_preemptible_tries <= 0:

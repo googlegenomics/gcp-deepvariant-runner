@@ -521,7 +521,7 @@ class DeepvariantRunnerTest(unittest.TestCase):
       gcp_deepvariant_runner.run(self._argv)
 
 
-class GcsUtilsTest(unittest.TestCase):
+class GcpUtilsTest(unittest.TestCase):
 
   def testIsValidGcsPath(self):
     invalid_paths = ['gs://', '://bucket', 'gs//bucket', 'gs:/bucket']
@@ -558,6 +558,18 @@ class GcsUtilsTest(unittest.TestCase):
                      'gs://bucket/dir/obj/': 'dir/obj'}
     for path, obj in paths_objects.items():
       self.assertEqual(gcp_deepvariant_runner._get_gcs_relative_path(path), obj)
+
+  def test_meets_gcp_label_restrictions(self):
+    valid_labels = ['label', 'label1', 'label1_2', 'label1_2-3', 'l']
+    invalid_labels = ['Label', '1label', 'label$', '',
+                      'very_very_very_very_long_prefix_for_a_label_']
+    for label in valid_labels:
+      self.assertEqual(
+          gcp_deepvariant_runner._meets_gcp_label_restrictions(label), True)
+
+    for label in invalid_labels:
+      self.assertEqual(
+          gcp_deepvariant_runner._meets_gcp_label_restrictions(label), False)
 
 
 if __name__ == '__main__':
