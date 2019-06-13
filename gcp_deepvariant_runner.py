@@ -333,6 +333,7 @@ def _meets_gcp_label_restrictions(label):
   return re.match(re.compile(r'^[a-z][a-z0-9_-]{,%d}$' % max_repetition),
                   label) is not None
 
+
 def _run_make_examples(pipeline_args):
   """Runs the make_examples job."""
 
@@ -653,10 +654,6 @@ def _validate_and_complete_args(pipeline_args):
 
   if pipeline_args.gpu and not pipeline_args.docker_image_gpu:
     raise ValueError('--docker_image_gpu must be provided with --gpu')
-  if (pipeline_args.call_variants_cores_per_worker <
-      pipeline_args.call_variants_cores_per_shard):
-    raise ValueError('--call_variants_cores_per_worker must be at least '
-                     'as large as --call_variants_cores_per_shard')
   if (pipeline_args.gvcf_gq_binsize is not None and
       not pipeline_args.gvcf_outfile):
     raise ValueError('--gvcf_outfile must be provided with --gvcf_gq_binsize')
@@ -937,14 +934,6 @@ def run(argv=None):
       type=int,
       default=8,
       help='Number of cores for each worker in call_variants.')
-  parser.add_argument(
-      '--call_variants_cores_per_shard',
-      type=int,
-      default=4,
-      help=('Number of cores for each shard in call_variants. Multiple shards '
-            'may be assigned to each worker, so this flag effectively limits '
-            'the number of parallel processes to run on each worker for '
-            'call_variants.'))
   parser.add_argument(
       '--call_variants_ram_per_worker_gb',
       type=int,

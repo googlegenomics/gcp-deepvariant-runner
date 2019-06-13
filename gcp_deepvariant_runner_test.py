@@ -327,8 +327,6 @@ class DeepvariantRunnerTest(unittest.TestCase):
         '3',
         '--call_variants_cores_per_worker',
         '5',
-        '--call_variants_cores_per_shard',
-        '2',
         '--shards',
         '15',
     ])
@@ -370,8 +368,6 @@ class DeepvariantRunnerTest(unittest.TestCase):
         '--call_variants_workers',
         '3',
         '--call_variants_cores_per_worker',
-        '5',
-        '--call_variants_cores_per_shard',
         '5',
         '--shards',
         '15',
