@@ -52,11 +52,14 @@ from __future__ import print_function
 
 import argparse
 import datetime
+import json
 import logging
 import multiprocessing
 import os
 import re
 import subprocess
+import tempfile
+import time
 import urlparse
 import uuid
 
@@ -77,37 +80,24 @@ _POSTPROCESS_VARIANTS_JOB_NAME = 'postprocess_variants'
 _DEFAULT_BOOT_DISK_SIZE_GB = '50'
 _ROLE_STORAGE_OBJ_CREATOR = ['storage.objects.create']
 
-_MAKE_EXAMPLES_COMMAND_NO_GCSFUSE = r"""
-seq "${{SHARD_START_INDEX}}" "${{SHARD_END_INDEX}}" | parallel --halt 2
-  /opt/deepvariant/bin/make_examples
-    --mode calling
-    --examples "${{EXAMPLES}}"/examples_output.tfrecord@"${{SHARDS}}".gz
-    --reads "${{INPUT_BAM}}"
-    --ref "${{INPUT_REF}}"
-    --task {{}}
-    {EXTRA_ARGS}
+_GCSFUSE_IMAGE = 'gcr.io/cloud-genomics-pipelines/gcsfuse'
+_GCSFUSE_LOCAL_DIR_TEMPLATE = '/mnt/google/input-gcsfused-{SHARD_INDEX}/'
+
+_GCSFUSE_COMMAND_TEMPLATE = r"""
+mkdir -p {LOCAL_DIR}
+/usr/local/bin/entrypoint.sh --implicit-dirs --foreground {BUCKET} {LOCAL_DIR}
+/usr/local/bin/entrypoint.sh wait {LOCAL_DIR}
 """
 
-_MAKE_EXAMPLES_COMMAND_WITH_GCSFUSE = r"""
-timeout=10;
-elapsed=0;
-seq "${{SHARD_START_INDEX}}" "${{SHARD_END_INDEX}}" | parallel --halt 2
-  "mkdir -p ./input-gcsfused-{{}} &&
-   gcsfuse --implicit-dirs "${{GCS_BUCKET}}" /input-gcsfused-{{}}" &&
-seq "${{SHARD_START_INDEX}}" "${{SHARD_END_INDEX}}" | parallel --halt 2
-   "until mountpoint -q /input-gcsfused-{{}}; do
-     test "${{elapsed}}" -lt "${{timeout}}" || fail "Time out waiting for gcsfuse mount points";
-     sleep 1;
-     elapsed=$((elapsed+1));
-   done" &&
-seq "${{SHARD_START_INDEX}}" "${{SHARD_END_INDEX}}" | parallel --halt 2
-  "/opt/deepvariant/bin/make_examples
-     --mode calling
-     --examples "${{EXAMPLES}}"/examples_output.tfrecord@"${{SHARDS}}".gz
-     --reads "/input-gcsfused-{{}}/${{BAM}}"
-     --ref "${{INPUT_REF}}"
-     --task {{}}
-     {EXTRA_ARGS}" # ENABLE_FUSE
+_MAKE_EXAMPLES_COMMAND = r"""
+seq {{SHARD_START_INDEX}} {{SHARD_END_INDEX}} | parallel --halt 2 \
+  /opt/deepvariant/bin/make_examples \
+    --mode calling \
+    --examples "$EXAMPLES"/examples_output.tfrecord@{NUM_SHARDS}.gz \
+    --reads "{{INPUT_BAM}}" \
+    --ref "$INPUT_REF" \
+    --task {{TASK_INDEX}} \
+    {EXTRA_ARGS}
 """
 
 _CALL_VARIANTS_COMMAND = r"""
@@ -219,6 +209,58 @@ def _get_base_job_args(pipeline_args):
     ]
 
   return job_args
+
+
+def _generate_actions_for_make_example(
+    shard_start_index, shard_end_index, input_bam_file, is_gcsfuse_activated,
+    deep_variant_image, make_example_command_template):
+  """Returns a dictionary of actions for execution of make_examples stage.
+
+  Args:
+    shard_start_index: Index of first assigned shard to this worker (inclusive).
+    shard_end_index: Index of last assigned shard to this worker (inclusive).
+    input_bam_file: full path of bam file on gcs (gs://bucket/path/file.bam).
+    is_gcsfuse_activated: whether or not read input bam file using gcsfuse.
+    deep_variant_image: DeepVariant image given using --docker_image flag.
+    make_example_command_template: template command used in actions list.
+  """
+  gcs_bucket = _get_gcs_bucket(input_bam_file)
+  bam_file_relative_path = _get_gcs_relative_path(input_bam_file)
+
+  actions = []
+  if is_gcsfuse_activated:
+    for shard_index in range(shard_start_index, shard_end_index + 1):
+      local_dir = _GCSFUSE_LOCAL_DIR_TEMPLATE.format(SHARD_INDEX=shard_index)
+      gcsfuse_command = _GCSFUSE_COMMAND_TEMPLATE.format(
+          BUCKET=gcs_bucket, LOCAL_DIR=local_dir)
+      actions.append({'imageUri': _GCSFUSE_IMAGE,
+                      'commands': ['-c', gcsfuse_command],
+                      'entrypoint': '/bin/sh',
+                      'flags': ['RUN_IN_BACKGROUND', 'ENABLE_FUSE'],
+                      'mounts': [{'disk': 'google', 'path': '/mnt/google'}]})
+
+    local_bam_template = (_GCSFUSE_LOCAL_DIR_TEMPLATE.format(SHARD_INDEX='{}') +
+                          bam_file_relative_path)
+  else:
+    local_bam_template = '$INPUT_BAM'
+
+  make_example_command = make_example_command_template.format(
+      SHARD_START_INDEX=shard_start_index, SHARD_END_INDEX=shard_end_index,
+      TASK_INDEX='{}', INPUT_BAM=local_bam_template)
+  actions.append(
+      {'imageUri': deep_variant_image,
+       'commands': ['-c', make_example_command],
+       'entrypoint': 'bash',
+       'mounts': [{'disk': 'google', 'path': '/mnt/google'}]})
+  return actions
+
+
+def _write_actions_to_temp_file(actions):
+  micro_second = int(round(time.time() * 1000000))
+  with tempfile.NamedTemporaryFile(prefix=str(micro_second),
+                                   suffix='.json', delete=False) as temp_file:
+    json.dump(actions, temp_file)
+  return temp_file.name
 
 
 def _run_job(run_args, log_path):
@@ -350,14 +392,15 @@ def _run_make_examples(pipeline_args):
     extra_args = []
     if pipeline_args.gvcf_outfile:
       extra_args.extend(
-          ['--gvcf', '"${GVCF}"/gvcf_output.tfrecord@"${SHARDS}".gz'])
+          ['--gvcf', '"$GVCF"/gvcf_output.tfrecord@{NUM_SHARDS}.gz'.format(
+              NUM_SHARDS=pipeline_args.shards)])
     if pipeline_args.gvcf_gq_binsize:
       extra_args.extend(
           ['--gvcf_gq_binsize',
            str(pipeline_args.gvcf_gq_binsize)])
     if pipeline_args.regions:
       num_localized_region_paths = len(get_region_paths(pipeline_args.regions))
-      localized_region_paths = map('"${{INPUT_REGIONS_{0}}}"'.format,
+      localized_region_paths = map('"$INPUT_REGIONS_{0}"'.format,
                                    range(num_localized_region_paths))
       region_literals = get_region_literals(pipeline_args.regions)
       extra_args.extend([
@@ -370,12 +413,9 @@ def _run_make_examples(pipeline_args):
       extra_args.extend(['--hts_block_size', str(pipeline_args.hts_block_size)])
     return extra_args
 
-  if pipeline_args.gcsfuse:
-    command = _MAKE_EXAMPLES_COMMAND_WITH_GCSFUSE.format(
-        EXTRA_ARGS=' '.join(get_extra_args()))
-  else:
-    command = _MAKE_EXAMPLES_COMMAND_NO_GCSFUSE.format(
-        EXTRA_ARGS=' '.join(get_extra_args()))
+  command = _MAKE_EXAMPLES_COMMAND.format(
+      NUM_SHARDS=pipeline_args.shards,
+      EXTRA_ARGS=' '.join(get_extra_args()))
 
   machine_type = 'custom-{0}-{1}'.format(
       pipeline_args.make_examples_cores_per_worker,
@@ -401,32 +441,30 @@ def _run_make_examples(pipeline_args):
         for k, region_path in enumerate(
             get_region_paths(pipeline_args.regions))
     ]
+    if not pipeline_args.gcsfuse:
+      # Without gcsfuse, BAM file must be copied as one of the input files.
+      inputs.extend(['INPUT_BAM=' + pipeline_args.bam])
+
     if pipeline_args.ref_gzi:
       inputs.extend([pipeline_args.ref_gzi])
-    env_args = [
-        '--set', 'SHARDS=' + str(pipeline_args.shards), '--set',
-        'SHARD_START_INDEX=' + str(int(i * shards_per_worker)), '--set',
-        'SHARD_END_INDEX=' + str(int((i + 1) * shards_per_worker - 1))
-    ]
-    if pipeline_args.gcsfuse:
-      env_args.extend([
-          '--set', 'GCS_BUCKET=' + _get_gcs_bucket(pipeline_args.bam), '--set',
-          'BAM=' + _get_gcs_relative_path(pipeline_args.bam)
-      ])
-    else:
-      inputs.extend(['INPUT_BAM=' + pipeline_args.bam])
+    shard_start_index = int(i * shards_per_worker)
+    shard_end_index = int((i + 1) * shards_per_worker - 1)
 
     job_name = pipeline_args.job_name_prefix + _MAKE_EXAMPLES_JOB_NAME
     output_path = os.path.join(pipeline_args.logging, _MAKE_EXAMPLES_JOB_NAME,
                                str(i))
-    run_args = _get_base_job_args(pipeline_args) + env_args + [
+
+    actions_array = _generate_actions_for_make_example(
+        shard_start_index, shard_end_index, pipeline_args.bam,
+        pipeline_args.gcsfuse, pipeline_args.docker_image, command)
+    actions_filename = _write_actions_to_temp_file(actions_array)
+
+    run_args = _get_base_job_args(pipeline_args) + [
         '--name', job_name, '--vm-labels', 'dv-job-name=' + job_name, '--image',
         pipeline_args.docker_image, '--output', output_path, '--inputs',
         ','.join(inputs), '--outputs', ','.join(outputs), '--machine-type',
         machine_type, '--disk-size',
-        str(pipeline_args.make_examples_disk_per_worker_gb), '--command',
-        command
-    ]
+        str(pipeline_args.make_examples_disk_per_worker_gb), actions_filename]
     results.append(threads.apply_async(_run_job, [run_args, output_path]))
 
   _wait_for_results(threads, results)

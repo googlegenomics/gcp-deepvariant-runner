@@ -42,7 +42,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import json
 import multiprocessing
+import os
+import tempfile
 import unittest
 
 import gcp_deepvariant_runner
@@ -234,33 +237,72 @@ class DeepvariantRunnerTest(unittest.TestCase):
         '--job_name_prefix',
         'prefix_',
     ])
+    temp_dir = tempfile.gettempdir()
+    before_temp_files = os.listdir(temp_dir)
     gcp_deepvariant_runner.run(self._argv)
-
+    after_temp_files = os.listdir(tempfile.gettempdir())
+    new_json_files = [os.path.join(temp_dir, item) for item in
+                      after_temp_files if item not in before_temp_files]
+    new_json_files.sort()
+    self.assertEqual(len(new_json_files), 3)  # One json file per worker
+    # Verifying Pipeline's API commands
     mock_apply_async.assert_has_calls([
         mock.call(mock.ANY, [
             _HasAllOf('prefix_make_examples', 'gcr.io/dockerimage',
-                      'SHARD_START_INDEX=0', 'SHARD_END_INDEX=4',
                       'EXAMPLES=gs://bucket/staging/examples/0/*',
+                      'INPUT_BAM=gs://bucket/bam', 'INPUT_REF=gs://bucket/ref',
+                      'INPUT_BAI=gs://bucket/bam.bai',
                       'INPUT_REGIONS_0=gs://bucket/region-1.bed',
-                      'INPUT_REGIONS_1=gs://bucket/region-2.bed'),
+                      'INPUT_REGIONS_1=gs://bucket/region-2.bed',
+                      new_json_files[0]),
             'gs://bucket/staging/logs/make_examples/0'
         ]),
         mock.call(mock.ANY, [
             _HasAllOf('prefix_make_examples', 'gcr.io/dockerimage',
-                      'SHARD_START_INDEX=5', 'SHARD_END_INDEX=9',
+                      'EXAMPLES=gs://bucket/staging/examples/0/*',
+                      'INPUT_BAM=gs://bucket/bam', 'INPUT_REF=gs://bucket/ref',
+                      'INPUT_BAI=gs://bucket/bam.bai',
                       'INPUT_REGIONS_0=gs://bucket/region-1.bed',
-                      'INPUT_REGIONS_1=gs://bucket/region-2.bed'),
+                      'INPUT_REGIONS_1=gs://bucket/region-2.bed',
+                      new_json_files[1]),
             'gs://bucket/staging/logs/make_examples/1'
         ]),
         mock.call(mock.ANY, [
             _HasAllOf('prefix_make_examples', 'gcr.io/dockerimage',
-                      'SHARD_START_INDEX=10', 'SHARD_END_INDEX=14',
+                      'EXAMPLES=gs://bucket/staging/examples/0/*',
+                      'INPUT_BAM=gs://bucket/bam', 'INPUT_REF=gs://bucket/ref',
+                      'INPUT_BAI=gs://bucket/bam.bai',
                       'INPUT_REGIONS_0=gs://bucket/region-1.bed',
-                      'INPUT_REGIONS_1=gs://bucket/region-2.bed'),
+                      'INPUT_REGIONS_1=gs://bucket/region-2.bed',
+                      new_json_files[2]),
             'gs://bucket/staging/logs/make_examples/2'
         ]),
     ])
     self.assertEqual(mock_apply_async.call_count, 3)
+    # Verify json files contain correct actions_list.
+    command_template = gcp_deepvariant_runner._MAKE_EXAMPLES_COMMAND.format(
+        NUM_SHARDS='15', EXTRA_ARGS=
+        '--regions \'chr20:1,5 "$INPUT_REGIONS_0" "$INPUT_REGIONS_1"\'')
+
+    shards_per_worker = int(15 / 3)
+    for worker_index in range(3):
+      with open(new_json_files[worker_index]) as json_file:
+        recieved_actions_list = json.load(json_file)
+
+      expected_command = command_template.format(
+          SHARD_START_INDEX=worker_index * shards_per_worker,
+          SHARD_END_INDEX=(worker_index + 1) * shards_per_worker - 1,
+          TASK_INDEX='{}', INPUT_BAM='$INPUT_BAM')
+      expected_actions_list = [
+          {'commands':
+           ['-c', expected_command],
+           'entrypoint': 'bash',
+           'mounts': [{'disk': 'google', 'path': '/mnt/google'}],
+           'imageUri': 'gcr.io/dockerimage'}]
+      self.assertEqual(len(expected_actions_list), len(recieved_actions_list))
+      for i in range(len(expected_actions_list)):
+        self.assertEqual(sorted(expected_actions_list[i].items()),
+                         sorted(recieved_actions_list[i].items()))
 
   @mock.patch.object(multiprocessing, 'Pool')
   @mock.patch('gcp_deepvariant_runner._gcs_object_exist')
@@ -275,9 +317,11 @@ class DeepvariantRunnerTest(unittest.TestCase):
         '--jobs_to_run',
         'make_examples',
         '--make_examples_workers',
-        '3',
+        '4',
         '--shards',
-        '15',
+        '32',
+        '--call_variants_workers',
+        '2',
         '--gpu',  # GPU should not have any effect.
         '--docker_image_gpu',
         'image_gpu',
@@ -285,29 +329,88 @@ class DeepvariantRunnerTest(unittest.TestCase):
         'prefix_',
         '--gcsfuse',
     ])
+    temp_dir = tempfile.gettempdir()
+    before_temp_files = os.listdir(temp_dir)
     gcp_deepvariant_runner.run(self._argv)
+    after_temp_files = os.listdir(tempfile.gettempdir())
+    new_json_files = [os.path.join(temp_dir, item) for item in
+                      after_temp_files if item not in before_temp_files]
+    new_json_files.sort()
+    self.assertEqual(len(new_json_files), 4)  # One json file per worker
+    # Verifying Pipeline's API commands
     mock_apply_async.assert_has_calls([
         mock.call(mock.ANY, [
             _HasAllOf('prefix_make_examples', 'gcr.io/dockerimage',
-                      'SHARD_START_INDEX=0', 'SHARD_END_INDEX=4',
                       'EXAMPLES=gs://bucket/staging/examples/0/*',
-                      'GCS_BUCKET=bucket', 'BAM=bam'),
+                      'INPUT_REF=gs://bucket/ref',
+                      'INPUT_BAI=gs://bucket/bam.bai',
+                      new_json_files[0]),
             'gs://bucket/staging/logs/make_examples/0'
         ]),
         mock.call(mock.ANY, [
             _HasAllOf('prefix_make_examples', 'gcr.io/dockerimage',
-                      'SHARD_START_INDEX=5', 'SHARD_END_INDEX=9',
-                      'GCS_BUCKET=bucket', 'BAM=bam'),
+                      'EXAMPLES=gs://bucket/staging/examples/0/*',
+                      'INPUT_REF=gs://bucket/ref',
+                      'INPUT_BAI=gs://bucket/bam.bai',
+                      new_json_files[1]),
             'gs://bucket/staging/logs/make_examples/1'
         ]),
         mock.call(mock.ANY, [
             _HasAllOf('prefix_make_examples', 'gcr.io/dockerimage',
-                      'SHARD_START_INDEX=10', 'SHARD_END_INDEX=14',
-                      'GCS_BUCKET=bucket', 'BAM=bam'),
+                      'EXAMPLES=gs://bucket/staging/examples/1/*',
+                      'INPUT_REF=gs://bucket/ref',
+                      'INPUT_BAI=gs://bucket/bam.bai',
+                      new_json_files[2]),
             'gs://bucket/staging/logs/make_examples/2'
         ]),
+        mock.call(mock.ANY, [
+            _HasAllOf('prefix_make_examples', 'gcr.io/dockerimage',
+                      'EXAMPLES=gs://bucket/staging/examples/1/*',
+                      'INPUT_REF=gs://bucket/ref',
+                      'INPUT_BAI=gs://bucket/bam.bai',
+                      new_json_files[3]),
+            'gs://bucket/staging/logs/make_examples/3'
+        ]),
     ])
-    self.assertEqual(mock_apply_async.call_count, 3)
+    self.assertEqual(mock_apply_async.call_count, 4)
+    # Verify json files contain correct actions_list.
+    command_template = gcp_deepvariant_runner._MAKE_EXAMPLES_COMMAND.format(
+        NUM_SHARDS='32', EXTRA_ARGS='')
+    shards_per_worker = int(32 / 4)
+    for worker_index in range(4):
+      with open(new_json_files[worker_index]) as json_file:
+        recieved_actions_list = json.load(json_file)
+
+      shard_start_index = worker_index * shards_per_worker
+      shard_end_index = (worker_index + 1) * shards_per_worker - 1
+      expected_command = command_template.format(
+          SHARD_START_INDEX=shard_start_index,
+          SHARD_END_INDEX=shard_end_index,
+          TASK_INDEX='{}',
+          INPUT_BAM='/mnt/google/input-gcsfused-{}/bam')
+      expected_actions_list = []
+      for shard_index in range(shard_start_index, shard_end_index + 1):
+        gcsfuse_command = gcp_deepvariant_runner._GCSFUSE_COMMAND_TEMPLATE.format(
+            BUCKET='bucket',
+            LOCAL_DIR=gcp_deepvariant_runner._GCSFUSE_LOCAL_DIR_TEMPLATE.format(
+                SHARD_INDEX=shard_index))
+        expected_actions_list.append(
+            {'commands':
+             ['-c', gcsfuse_command],
+             'entrypoint': '/bin/sh',
+             'flags': ['RUN_IN_BACKGROUND', 'ENABLE_FUSE'],
+             'mounts': [{'disk': 'google', 'path': '/mnt/google'}],
+             'imageUri': 'gcr.io/cloud-genomics-pipelines/gcsfuse'})
+      expected_actions_list.append(
+          {'commands':
+           ['-c', expected_command],
+           'entrypoint': 'bash',
+           'mounts': [{'disk': 'google', 'path': '/mnt/google'}],
+           'imageUri': 'gcr.io/dockerimage'})
+      self.assertEqual(len(expected_actions_list), len(recieved_actions_list))
+      for i in range(len(expected_actions_list)):
+        self.assertEqual(sorted(expected_actions_list[i].items()),
+                         sorted(recieved_actions_list[i].items()))
 
   @mock.patch.object(multiprocessing, 'Pool')
   @mock.patch('gcp_deepvariant_runner._gcs_object_exist')
@@ -517,7 +620,7 @@ class DeepvariantRunnerTest(unittest.TestCase):
       gcp_deepvariant_runner.run(self._argv)
 
 
-class GcpUtilsTest(unittest.TestCase):
+class UtilsTest(unittest.TestCase):
 
   def testIsValidGcsPath(self):
     invalid_paths = ['gs://', '://bucket', 'gs//bucket', 'gs:/bucket']
@@ -567,6 +670,58 @@ class GcpUtilsTest(unittest.TestCase):
       self.assertEqual(
           gcp_deepvariant_runner._meets_gcp_label_restrictions(label), False)
 
+  def testGenerateActionsForMakeExample(self):
+    command_template = gcp_deepvariant_runner._MAKE_EXAMPLES_COMMAND.format(
+        NUM_SHARDS='6', EXTRA_ARGS=' --extra-args')
+    expected_command = command_template.format(SHARD_START_INDEX=1,
+                                               SHARD_END_INDEX=4,
+                                               TASK_INDEX='{}',
+                                               INPUT_BAM='$INPUT_BAM')
+    expected_actions_list = [
+        {'commands':
+         ['-c', expected_command],
+         'entrypoint': 'bash',
+         'mounts': [{'disk': 'google', 'path': '/mnt/google'}],
+         'imageUri': 'gcr.io/temp/image'}]
+
+    actions_list = gcp_deepvariant_runner._generate_actions_for_make_example(
+        1, 4, 'gs://temp-bucket/path/input.bam', False, 'gcr.io/temp/image',
+        command_template)
+    self.assertListEqual(actions_list, expected_actions_list)
+    gcp_deepvariant_runner._write_actions_to_temp_file(actions_list)
+
+  def testGenerateActionsForMakeExampleGcsfuse(self):
+    command_template = gcp_deepvariant_runner._MAKE_EXAMPLES_COMMAND.format(
+        NUM_SHARDS='6', EXTRA_ARGS=' --extra-args')
+    expected_command = command_template.format(
+        SHARD_START_INDEX=2, SHARD_END_INDEX=4, TASK_INDEX='{}',
+        INPUT_BAM='/mnt/google/input-gcsfused-{}/path/input.bam')
+    expected_actions_list = []
+    for shard_index in range(2, 4 + 1):
+      gcsfuse_command = gcp_deepvariant_runner._GCSFUSE_COMMAND_TEMPLATE.format(
+          BUCKET='temp-bucket',
+          LOCAL_DIR=gcp_deepvariant_runner._GCSFUSE_LOCAL_DIR_TEMPLATE.format(
+              SHARD_INDEX=shard_index))
+      expected_actions_list.append(
+          {'commands':
+           ['-c', gcsfuse_command],
+           'entrypoint': '/bin/sh',
+           'flags': ['RUN_IN_BACKGROUND', 'ENABLE_FUSE'],
+           'mounts': [{'disk': 'google', 'path': '/mnt/google'}],
+           'imageUri': 'gcr.io/cloud-genomics-pipelines/gcsfuse'})
+    expected_actions_list.append(
+        {'commands':
+         ['-c', expected_command],
+         'entrypoint': 'bash',
+         'mounts': [{'disk': 'google', 'path': '/mnt/google'}],
+         'imageUri': 'gcr.io/temp/image'})
+
+    actions_list = gcp_deepvariant_runner._generate_actions_for_make_example(
+        2, 4, 'gs://temp-bucket/path/input.bam', True, 'gcr.io/temp/image',
+        gcp_deepvariant_runner._MAKE_EXAMPLES_COMMAND.format(
+            NUM_SHARDS='6', EXTRA_ARGS=' --extra-args'))
+    self.assertListEqual(actions_list, expected_actions_list)
+    gcp_deepvariant_runner._write_actions_to_temp_file(actions_list)
 
 if __name__ == '__main__':
   unittest.main()
