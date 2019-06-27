@@ -60,7 +60,7 @@ import re
 import subprocess
 import tempfile
 import time
-import urlparse
+import urllib
 import uuid
 
 import gke_cluster
@@ -200,13 +200,13 @@ def _get_base_job_args(pipeline_args):
       str(pipeline_args.logging_interval_sec) + 's', '--zones'
   ] + pipeline_args.zones
   if pipeline_args.network:
-    job_args += ['--network', pipeline_args.network]
+    job_args.extend(['--network', pipeline_args.network])
   if pipeline_args.subnetwork:
-    job_args += ['--subnetwork', pipeline_args.subnetwork]
+    job_args.extend(['--subnetwork', pipeline_args.subnetwork])
   if pipeline_args.operation_label:
-    job_args += [
+    job_args.extend([
         '--labels', _DEEPVARIANT_LABEL_KEY + '=' + pipeline_args.operation_label
-    ]
+    ])
 
   return job_args
 
@@ -257,7 +257,7 @@ def _generate_actions_for_make_example(
 
 def _write_actions_to_temp_file(actions):
   micro_second = int(round(time.time() * 1000000))
-  with tempfile.NamedTemporaryFile(prefix=str(micro_second),
+  with tempfile.NamedTemporaryFile(mode='w', prefix=str(micro_second),
                                    suffix='.json', delete=False) as temp_file:
     json.dump(actions, temp_file)
   return temp_file.name
@@ -299,8 +299,8 @@ def _is_valid_gcs_path(gcs_path):
   Args:
     gcs_path: (str) a path to directory or an obj on GCS.
   """
-  return (urlparse.urlparse(gcs_path).scheme == 'gs' and
-          urlparse.urlparse(gcs_path).netloc != '')
+  return (urllib.parse.urlparse(gcs_path).scheme == 'gs' and
+          urllib.parse.urlparse(gcs_path).netloc != '')
 
 
 def _gcs_object_exist(gcs_obj_path):
@@ -349,7 +349,7 @@ def _get_gcs_bucket(gcs_path):
   """
   if not _is_valid_gcs_path(gcs_path):
     raise ValueError('Invalid GCS path provided: %s' % gcs_path)
-  return urlparse.urlparse(gcs_path).netloc
+  return urllib.parse.urlparse(gcs_path).netloc
 
 
 def _get_gcs_relative_path(gcs_path):
@@ -362,7 +362,7 @@ def _get_gcs_relative_path(gcs_path):
   """
   if not _is_valid_gcs_path(gcs_path):
     raise ValueError('Invalid GCS path provided: %s' % gcs_path)
-  return urlparse.urlparse(gcs_path).path.strip('/')
+  return urllib.parse.urlparse(gcs_path).path.strip('/')
 
 
 def _meets_gcp_label_restrictions(label):
@@ -380,7 +380,9 @@ def _run_make_examples(pipeline_args):
   """Runs the make_examples job."""
 
   def get_region_paths(regions):
-    return filter(_is_valid_gcs_path, regions or [])
+    return [
+        region for region in regions or [] if _is_valid_gcs_path(region)
+    ]
 
   def get_region_literals(regions):
     return [
@@ -400,8 +402,8 @@ def _run_make_examples(pipeline_args):
            str(pipeline_args.gvcf_gq_binsize)])
     if pipeline_args.regions:
       num_localized_region_paths = len(get_region_paths(pipeline_args.regions))
-      localized_region_paths = map('"$INPUT_REGIONS_{0}"'.format,
-                                   range(num_localized_region_paths))
+      localized_region_paths = list(map('"$INPUT_REGIONS_{0}"'.format,
+                                        range(num_localized_region_paths)))
       region_literals = get_region_literals(pipeline_args.regions)
       extra_args.extend([
           '--regions',

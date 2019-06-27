@@ -637,7 +637,7 @@ class UtilsTest(unittest.TestCase):
   def testGetGcsBucket(self):
     invalid_paths = ['gs://', '://bucket', 'gs//bucket', 'gs:/bucket']
     for path in invalid_paths:
-      with self.assertRaisesRegexp(
+      with self.assertRaisesRegex(
           ValueError, 'Invalid GCS path provided: %s' % path):
         gcp_deepvariant_runner._get_gcs_bucket(path)
 
@@ -648,7 +648,7 @@ class UtilsTest(unittest.TestCase):
   def testGetGcsRelativePath(self):
     invalid_paths = ['gs://', '://bucket', 'gs//bucket', 'gs:/bucket']
     for path in invalid_paths:
-      with self.assertRaisesRegexp(
+      with self.assertRaisesRegex(
           ValueError, 'Invalid GCS path provided: %s' % path):
         gcp_deepvariant_runner._get_gcs_relative_path(path)
 
