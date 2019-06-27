@@ -405,7 +405,7 @@ def _run_make_examples(pipeline_args):
       region_literals = get_region_literals(pipeline_args.regions)
       extra_args.extend([
           '--regions',
-          '\'%s\'' % ' '.join(region_literals + localized_region_paths)
+          r'\'%s\'' % ' '.join(region_literals + localized_region_paths)
       ])
     if pipeline_args.sample_name:
       extra_args.extend(['--sample_name', pipeline_args.sample_name])

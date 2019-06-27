@@ -229,8 +229,10 @@ class DeepvariantRunnerTest(unittest.TestCase):
         '15',
         '--regions',
         'gs://bucket/region-1.bed',
-        'chr20:1,5',
+        'chr1:10,000-10,010',
+        'chr2:10000-10010',
         'gs://bucket/region-2.bed',
+        'chr3:1,000,000-2,000,000',
         '--gpu',  # GPU should not have any effect.
         '--docker_image_gpu',
         'image_gpu',
@@ -282,7 +284,8 @@ class DeepvariantRunnerTest(unittest.TestCase):
     # Verify json files contain correct actions_list.
     command_template = gcp_deepvariant_runner._MAKE_EXAMPLES_COMMAND.format(
         NUM_SHARDS='15', EXTRA_ARGS=
-        '--regions \'chr20:1,5 "$INPUT_REGIONS_0" "$INPUT_REGIONS_1"\'')
+        '--regions \\\'chr1:10,000-10,010 chr2:10000-10010 '
+        'chr3:1,000,000-2,000,000 "$INPUT_REGIONS_0" "$INPUT_REGIONS_1"\\\'')
 
     shards_per_worker = int(15 / 3)
     for worker_index in range(3):
