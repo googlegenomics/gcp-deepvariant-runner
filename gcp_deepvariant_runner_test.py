@@ -393,15 +393,24 @@ class DeepvariantRunnerTest(unittest.TestCase):
           INPUT_BAM='/mnt/google/input-gcsfused-{}/bam')
       expected_actions_list = []
       for shard_index in range(shard_start_index, shard_end_index + 1):
-        gcsfuse_command = gcp_deepvariant_runner._GCSFUSE_COMMAND_TEMPLATE.format(
+        gcsfuse_create_command = gcp_deepvariant_runner._GCSFUSE_CREATE_COMMAND_TEMPLATE.format(
             BUCKET='bucket',
             LOCAL_DIR=gcp_deepvariant_runner._GCSFUSE_LOCAL_DIR_TEMPLATE.format(
                 SHARD_INDEX=shard_index))
         expected_actions_list.append(
             {'commands':
-             ['-c', gcsfuse_command],
+             ['-c', gcsfuse_create_command],
              'entrypoint': '/bin/sh',
              'flags': ['RUN_IN_BACKGROUND', 'ENABLE_FUSE'],
+             'mounts': [{'disk': 'google', 'path': '/mnt/google'}],
+             'imageUri': 'gcr.io/cloud-genomics-pipelines/gcsfuse'})
+        gcsfuse_verify_command = gcp_deepvariant_runner._GCSFUSE_VERIFY_COMMAND_TEMPLATE.format(
+            LOCAL_DIR=gcp_deepvariant_runner._GCSFUSE_LOCAL_DIR_TEMPLATE.format(
+                SHARD_INDEX=shard_index))
+        expected_actions_list.append(
+            {'commands':
+             ['-c', gcsfuse_verify_command],
+             'entrypoint': '/bin/sh',
              'mounts': [{'disk': 'google', 'path': '/mnt/google'}],
              'imageUri': 'gcr.io/cloud-genomics-pipelines/gcsfuse'})
       expected_actions_list.append(
@@ -701,15 +710,24 @@ class UtilsTest(unittest.TestCase):
         INPUT_BAM='/mnt/google/input-gcsfused-{}/path/input.bam')
     expected_actions_list = []
     for shard_index in range(2, 4 + 1):
-      gcsfuse_command = gcp_deepvariant_runner._GCSFUSE_COMMAND_TEMPLATE.format(
+      gcsfuse_create_command = gcp_deepvariant_runner._GCSFUSE_CREATE_COMMAND_TEMPLATE.format(
           BUCKET='temp-bucket',
           LOCAL_DIR=gcp_deepvariant_runner._GCSFUSE_LOCAL_DIR_TEMPLATE.format(
               SHARD_INDEX=shard_index))
       expected_actions_list.append(
           {'commands':
-           ['-c', gcsfuse_command],
+           ['-c', gcsfuse_create_command],
            'entrypoint': '/bin/sh',
            'flags': ['RUN_IN_BACKGROUND', 'ENABLE_FUSE'],
+           'mounts': [{'disk': 'google', 'path': '/mnt/google'}],
+           'imageUri': 'gcr.io/cloud-genomics-pipelines/gcsfuse'})
+      gcsfuse_verify_command = gcp_deepvariant_runner._GCSFUSE_VERIFY_COMMAND_TEMPLATE.format(
+          LOCAL_DIR=gcp_deepvariant_runner._GCSFUSE_LOCAL_DIR_TEMPLATE.format(
+              SHARD_INDEX=shard_index))
+      expected_actions_list.append(
+          {'commands':
+           ['-c', gcsfuse_verify_command],
+           'entrypoint': '/bin/sh',
            'mounts': [{'disk': 'google', 'path': '/mnt/google'}],
            'imageUri': 'gcr.io/cloud-genomics-pipelines/gcsfuse'})
     expected_actions_list.append(

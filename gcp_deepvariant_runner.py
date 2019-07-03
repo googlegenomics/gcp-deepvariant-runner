@@ -83,9 +83,12 @@ _ROLE_STORAGE_OBJ_CREATOR = ['storage.objects.create']
 _GCSFUSE_IMAGE = 'gcr.io/cloud-genomics-pipelines/gcsfuse'
 _GCSFUSE_LOCAL_DIR_TEMPLATE = '/mnt/google/input-gcsfused-{SHARD_INDEX}/'
 
-_GCSFUSE_COMMAND_TEMPLATE = r"""
+_GCSFUSE_CREATE_COMMAND_TEMPLATE = r"""
 mkdir -p {LOCAL_DIR}
 /usr/local/bin/entrypoint.sh --implicit-dirs --foreground {BUCKET} {LOCAL_DIR}
+"""
+
+_GCSFUSE_VERIFY_COMMAND_TEMPLATE = r"""
 /usr/local/bin/entrypoint.sh wait {LOCAL_DIR}
 """
 
@@ -231,12 +234,18 @@ def _generate_actions_for_make_example(
   if is_gcsfuse_activated:
     for shard_index in range(shard_start_index, shard_end_index + 1):
       local_dir = _GCSFUSE_LOCAL_DIR_TEMPLATE.format(SHARD_INDEX=shard_index)
-      gcsfuse_command = _GCSFUSE_COMMAND_TEMPLATE.format(
+      gcsfuse_create_command = _GCSFUSE_CREATE_COMMAND_TEMPLATE.format(
           BUCKET=gcs_bucket, LOCAL_DIR=local_dir)
       actions.append({'imageUri': _GCSFUSE_IMAGE,
-                      'commands': ['-c', gcsfuse_command],
+                      'commands': ['-c', gcsfuse_create_command],
                       'entrypoint': '/bin/sh',
                       'flags': ['RUN_IN_BACKGROUND', 'ENABLE_FUSE'],
+                      'mounts': [{'disk': 'google', 'path': '/mnt/google'}]})
+      gcsfuse_verify_command = _GCSFUSE_VERIFY_COMMAND_TEMPLATE.format(
+          LOCAL_DIR=local_dir)
+      actions.append({'imageUri': _GCSFUSE_IMAGE,
+                      'commands': ['-c', gcsfuse_verify_command],
+                      'entrypoint': '/bin/sh',
                       'mounts': [{'disk': 'google', 'path': '/mnt/google'}]})
 
     local_bam_template = (_GCSFUSE_LOCAL_DIR_TEMPLATE.format(SHARD_INDEX='{}') +
