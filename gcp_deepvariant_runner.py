@@ -68,10 +68,11 @@ from google.api_core import exceptions as google_exceptions
 from google.cloud import storage
 
 
-_CRAM_FILE_SUFFIX = '.cram'
-_GZ_FILE_SUFFIX = '.gz'
 _BAI_FILE_SUFFIX = '.bai'
+_BAM_FILE_SUFFIX = '.bam'
+_CRAM_FILE_SUFFIX = '.cram'
 _FAI_FILE_SUFFIX = '.fai'
+_GZ_FILE_SUFFIX = '.gz'
 _GZI_FILE_SUFFIX = '.gzi'
 
 _MAKE_EXAMPLES_JOB_NAME = 'make_examples'
@@ -742,6 +743,9 @@ def _validate_and_complete_args(pipeline_args):
     pipeline_args.ref_gzi = pipeline_args.ref + _GZI_FILE_SUFFIX
   if not pipeline_args.bai:
     pipeline_args.bai = pipeline_args.bam + _BAI_FILE_SUFFIX
+    if not _gcs_object_exist(pipeline_args.bai):
+      pipeline_args.bai = pipeline_args.bam.replace(_BAM_FILE_SUFFIX,
+                                                    _BAI_FILE_SUFFIX)
 
   # Ensuring all input files exist...
   if not _gcs_object_exist(pipeline_args.ref):
