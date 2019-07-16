@@ -116,9 +116,6 @@ class DeepvariantRunnerTest(unittest.TestCase):
         'gs://bucket/bam',
         '--ref',
         'gs://bucket/ref',
-        '--attempts',
-        '2',
-        '--max_preemptible_tries', '0', '--max_non_preemptible_tries', '0'
     ]
 
   @mock.patch('gcp_deepvariant_runner._run_job')
@@ -143,7 +140,6 @@ class DeepvariantRunnerTest(unittest.TestCase):
                       'INPUT_REF=gs://bucket/ref',
                       'INPUT_REF_FAI=gs://bucket/ref.fai',
                       'EXAMPLES=gs://bucket/staging/examples/0/*',
-                      '--attempts', '2', '--pvm-attempts', '0',
                       '--output-interval', '60s'),
             'gs://bucket/staging/logs/make_examples/0'
         ]),
@@ -152,7 +148,6 @@ class DeepvariantRunnerTest(unittest.TestCase):
                       'MODEL=gs://bucket/model',
                       'EXAMPLES=gs://bucket/staging/examples/0/*',
                       'CALLED_VARIANTS=gs://bucket/staging/called_variants/*',
-                      '--attempts', '2', '--pvm-attempts', '0',
                       '--output-interval', '60s'),
             'gs://bucket/staging/logs/call_variants/0'
         ]),
@@ -162,7 +157,6 @@ class DeepvariantRunnerTest(unittest.TestCase):
     mock_run_job.assert_called_once_with(
         _HasAllOf('postprocess_variants', 'gcr.io/dockerimage',
                   'CALLED_VARIANTS=gs://bucket/staging/called_variants/*',
-                  '--attempts', '2', '--pvm-attempts', '0',
                   'OUTFILE=gs://bucket/output.vcf', '--output-interval', '60s'),
         'gs://bucket/staging/logs/postprocess_variants')
 
@@ -196,7 +190,6 @@ class DeepvariantRunnerTest(unittest.TestCase):
                       'INPUT_REF=gs://bucket/ref',
                       'INPUT_REF_FAI=gs://bucket/ref.fai',
                       'EXAMPLES=gs://bucket/staging/examples/0/*',
-                      '--attempts', '2', '--pvm-attempts', '0',
                       'GVCF=gs://bucket/staging/gvcf/*'),
             'gs://bucket/staging/logs/make_examples/0'
         ]),
@@ -204,7 +197,6 @@ class DeepvariantRunnerTest(unittest.TestCase):
             _HasAllOf('call_variants', 'gcr.io/dockerimage',
                       'MODEL=gs://bucket/model',
                       'EXAMPLES=gs://bucket/staging/examples/0/*',
-                      '--attempts', '2', '--pvm-attempts', '0',
                       'CALLED_VARIANTS=gs://bucket/staging/called_variants/*'),
             'gs://bucket/staging/logs/call_variants/0'
         ]),
@@ -216,7 +208,6 @@ class DeepvariantRunnerTest(unittest.TestCase):
                   'CALLED_VARIANTS=gs://bucket/staging/called_variants/*',
                   'OUTFILE=gs://bucket/output.vcf',
                   'GVCF=gs://bucket/staging/gvcf/*',
-                  '--attempts', '2', '--pvm-attempts', '0',
                   'GVCF_OUTFILE=gs://bucket/gvcf_output.vcf'),
         'gs://bucket/staging/logs/postprocess_variants')
 
@@ -265,7 +256,6 @@ class DeepvariantRunnerTest(unittest.TestCase):
                       'INPUT_BAI=gs://bucket/bam.bai',
                       'INPUT_REGIONS_0=gs://bucket/region-1.bed',
                       'INPUT_REGIONS_1=gs://bucket/region-2.bed',
-                      '--attempts', '2', '--pvm-attempts', '0',
                       new_json_files[0]),
             'gs://bucket/staging/logs/make_examples/0'
         ]),
@@ -276,7 +266,6 @@ class DeepvariantRunnerTest(unittest.TestCase):
                       'INPUT_BAI=gs://bucket/bam.bai',
                       'INPUT_REGIONS_0=gs://bucket/region-1.bed',
                       'INPUT_REGIONS_1=gs://bucket/region-2.bed',
-                      '--attempts', '2', '--pvm-attempts', '0',
                       new_json_files[1]),
             'gs://bucket/staging/logs/make_examples/1'
         ]),
@@ -287,7 +276,6 @@ class DeepvariantRunnerTest(unittest.TestCase):
                       'INPUT_BAI=gs://bucket/bam.bai',
                       'INPUT_REGIONS_0=gs://bucket/region-1.bed',
                       'INPUT_REGIONS_1=gs://bucket/region-2.bed',
-                      '--attempts', '2', '--pvm-attempts', '0',
                       new_json_files[2]),
             'gs://bucket/staging/logs/make_examples/2'
         ]),
@@ -359,7 +347,6 @@ class DeepvariantRunnerTest(unittest.TestCase):
                       'EXAMPLES=gs://bucket/staging/examples/0/*',
                       'INPUT_REF=gs://bucket/ref',
                       'INPUT_BAI=gs://bucket/bam.bai',
-                      '--attempts', '2', '--pvm-attempts', '0',
                       new_json_files[0]),
             'gs://bucket/staging/logs/make_examples/0'
         ]),
@@ -368,7 +355,6 @@ class DeepvariantRunnerTest(unittest.TestCase):
                       'EXAMPLES=gs://bucket/staging/examples/0/*',
                       'INPUT_REF=gs://bucket/ref',
                       'INPUT_BAI=gs://bucket/bam.bai',
-                      '--attempts', '2', '--pvm-attempts', '0',
                       new_json_files[1]),
             'gs://bucket/staging/logs/make_examples/1'
         ]),
@@ -377,7 +363,6 @@ class DeepvariantRunnerTest(unittest.TestCase):
                       'EXAMPLES=gs://bucket/staging/examples/1/*',
                       'INPUT_REF=gs://bucket/ref',
                       'INPUT_BAI=gs://bucket/bam.bai',
-                      '--attempts', '2', '--pvm-attempts', '0',
                       new_json_files[2]),
             'gs://bucket/staging/logs/make_examples/2'
         ]),
@@ -386,7 +371,6 @@ class DeepvariantRunnerTest(unittest.TestCase):
                       'EXAMPLES=gs://bucket/staging/examples/1/*',
                       'INPUT_REF=gs://bucket/ref',
                       'INPUT_BAI=gs://bucket/bam.bai',
-                      '--attempts', '2', '--pvm-attempts', '0',
                       new_json_files[3]),
             'gs://bucket/staging/logs/make_examples/3'
         ]),
@@ -466,19 +450,16 @@ class DeepvariantRunnerTest(unittest.TestCase):
     mock_apply_async.assert_has_calls([
         mock.call(mock.ANY, [
             _HasAllOf('call_variants', 'gcr.io/dockerimage',
-                      '--attempts', '2', '--pvm-attempts', '0',
                       'CALL_VARIANTS_SHARD_INDEX=0'),
             'gs://bucket/staging/logs/call_variants/0'
         ]),
         mock.call(mock.ANY, [
             _HasAllOf('call_variants', 'gcr.io/dockerimage',
-                      '--attempts', '2', '--pvm-attempts', '0',
                       'CALL_VARIANTS_SHARD_INDEX=1'),
             'gs://bucket/staging/logs/call_variants/1'
         ]),
         mock.call(mock.ANY, [
             _HasAllOf('call_variants', 'gcr.io/dockerimage',
-                      '--attempts', '2', '--pvm-attempts', '0',
                       'CALL_VARIANTS_SHARD_INDEX=2'),
             'gs://bucket/staging/logs/call_variants/2'
         ]),
@@ -514,19 +495,16 @@ class DeepvariantRunnerTest(unittest.TestCase):
     mock_apply_async.assert_has_calls([
         mock.call(mock.ANY, [
             _HasAllOf('call_variants', 'gcr.io/dockerimage_gpu',
-                      '--attempts', '2', '--pvm-attempts', '0',
                       'nvidia-tesla-k80', 'CALL_VARIANTS_SHARD_INDEX=0'),
             'gs://bucket/staging/logs/call_variants/0'
         ]),
         mock.call(mock.ANY, [
             _HasAllOf('call_variants', 'gcr.io/dockerimage_gpu',
-                      '--attempts', '2', '--pvm-attempts', '0',
                       'nvidia-tesla-k80', 'CALL_VARIANTS_SHARD_INDEX=1'),
             'gs://bucket/staging/logs/call_variants/1'
         ]),
         mock.call(mock.ANY, [
             _HasAllOf('call_variants', 'gcr.io/dockerimage_gpu',
-                      '--attempts', '2', '--pvm-attempts', '0',
                       'nvidia-tesla-k80', 'CALL_VARIANTS_SHARD_INDEX=2'),
             'gs://bucket/staging/logs/call_variants/2'
         ]),
@@ -615,7 +593,6 @@ class DeepvariantRunnerTest(unittest.TestCase):
                   'CALLED_VARIANTS=gs://bucket/staging/called_variants/*',
                   'INPUT_REF=gs://bucket/ref', 'SHARDS=15',
                   'CALL_VARIANTS_SHARDS=1', 'INPUT_REF_FAI=gs://bucket/ref.fai',
-                  '--attempts', '2', '--pvm-attempts', '0',
                   'OUTFILE=gs://bucket/output.vcf'),
         'gs://bucket/staging/logs/postprocess_variants')
 

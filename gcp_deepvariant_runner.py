@@ -192,19 +192,17 @@ def _get_staging_called_variants_folder(pipeline_args):
 
 def _get_base_job_args(pipeline_args):
   """Base arguments that are common among all jobs."""
+  pvm_attempts = 0
   if pipeline_args.preemptible:
-    attempts_args = ['--attempts', '0',
-                     '--pvm-attempts', str(pipeline_args.attempts)]
-  else:
-    attempts_args = ['--attempts', str(pipeline_args.attempts),
-                     '--pvm-attempts', '0']
+    pvm_attempts = pipeline_args.max_preemptible_tries
 
-  job_args = (['pipelines', '--project', pipeline_args.project, 'run'] +
-              attempts_args +
-              ['--boot-disk-size', _DEFAULT_BOOT_DISK_SIZE_GB,
-               '--output-interval',
-               str(pipeline_args.logging_interval_sec) + 's', '--zones'] +
-              pipeline_args.zones)
+  job_args = [
+      'pipelines', '--project', pipeline_args.project, 'run', '--attempts',
+      str(pipeline_args.max_non_preemptible_tries), '--pvm-attempts',
+      str(pvm_attempts), '--boot-disk-size', _DEFAULT_BOOT_DISK_SIZE_GB,
+      '--output-interval',
+      str(pipeline_args.logging_interval_sec) + 's', '--zones'
+  ] + pipeline_args.zones
   if pipeline_args.network:
     job_args.extend(['--network', pipeline_args.network])
   if pipeline_args.subnetwork:
@@ -515,10 +513,15 @@ def _deploy_call_variants_pod(pod_name, cluster, pipeline_args):
                     pipeline_args.preemptible else 'cloud-tpus.google.com/v2'),
       BATCH_SIZE=pipeline_args.call_variants_batch_size)
 
+  if pipeline_args.preemptible:
+    num_tries = pipeline_args.max_preemptible_tries
+  else:
+    num_tries = pipeline_args.max_non_preemptible_tries
+
   cluster.deploy_pod(
       pod_config=pod_config,
       pod_name=pod_name,
-      retries=pipeline_args.attempts - 1,
+      retries=num_tries - 1,
       wait=True)
 
 
@@ -678,31 +681,10 @@ def _validate_and_complete_args(pipeline_args):
     raise ValueError(
         '--job_name_prefix must meet GCP label restrictions: {}'.format(
             pipeline_args.job_name_prefix))
-  # TODO(#22): Modify this logic after deprecating the two flags.
-  if (pipeline_args.max_non_preemptible_tries > 0 or
-      pipeline_args.max_preemptible_tries > 0):
-    logging.warning('These two flags will be deprecated soon: '
-                    '\n--max_non_preemptible_tries \n --max_preemptible_tries '
-                    '\nPlease instead use --attempts and --preemptible flags.')
-    if pipeline_args.attempts > 0:
-      raise ValueError(
-          '--attempts cannot be used with --max_non_preemptible_tries or '
-          '--max_preemptible_tries flags. Please set those two to zero.')
-    if pipeline_args.preemptible:
-      if pipeline_args.max_preemptible_tries <= 0:
-        raise ValueError('--max_preemptible_tries must be greater than zero '
-                         'when --preemptible is requested.')
-      else:
-        pipeline_args.attempts = pipeline_args.max_preemptible_tries
-    else:
-      if pipeline_args.max_non_preemptible_tries <= 0:
-        raise ValueError('--max_non_preemptible_tries must be greater zero. ')
-      else:
-        pipeline_args.attempts = pipeline_args.max_non_preemptible_tries
-  else:
-    if pipeline_args.attempts <= 0:
-      raise ValueError('--attempts must be greater than zero.')
-
+  if pipeline_args.preemptible and pipeline_args.max_preemptible_tries <= 0:
+    raise ValueError('--max_preemptible_tries must be greater than zero.')
+  if pipeline_args.max_non_preemptible_tries <= 0:
+    raise ValueError('--max_non_preemptible_tries must be greater than zero.')
   if pipeline_args.make_examples_workers <= 0:
     raise ValueError('--make_examples_workers must be greater than zero.')
   if pipeline_args.call_variants_workers <= 0:
@@ -894,36 +876,15 @@ def run(argv=None):
             'be region literals (chr20:10-20) or Google Cloud Storage paths '
             'to BED/BEDPE files.'))
   parser.add_argument(
-      '--preemptible',
-      default=False,
-      action='store_true',
-      help=('Use preemptible VMs for the pipeline and all re-tries in case '
-            '--attempts is set to larger than 1.'))
-  parser.add_argument(
-      '--attempts',
-      type=int,
-      default=0,
-      help=('Maximum number of times to attempt running each worker (within a '
-            'job). Depending on --preemptible flag re-attempts will be using '
-            'regular (non-preemptible) VMs or preemptible VMs. Note regular '
-            'VMs may still crash unexpectedly, so it may be worth to retry on '
-            'transient failures.'))
-  # TODO(#22): deprecate this flag in next release in favour of --attempts.
-  parser.add_argument(
       '--max_non_preemptible_tries',
       type=int,
       default=2,
-      help=('WARNING: This flag is deprecated and will be removed in a future '
-            'release. Use --attempts and --preemptible to control retry '
-            'behaviour.'))
-  # TODO(#22): deprecate this flag in next release in favour of --attempts.
-  parser.add_argument(
-      '--max_preemptible_tries',
-      type=int,
-      default=3,
-      help=('WARNING: This flag is deprecated and will be removed in a future '
-            'release. Use --attempts and --preemptible to control retry '
-            'behaviour.'))
+      help=('Maximum number of times to try running each worker (within a job) '
+            'with regular (non-preemptible) VMs. Regular VMs may still crash '
+            'unexpectedly, so it may be worth to retry on transient failures. '
+            'Note that if max_preemptible_tries is also specified, then '
+            'the pipeline would first be run with preemptible VMs, and then '
+            'with regular VMs following the value provided here.'))
   parser.add_argument(
       '--network', help=('Optional. The VPC network on GCP to use.'))
   parser.add_argument(
@@ -970,6 +931,21 @@ def run(argv=None):
       '--gke_cluster_zone',
       help=('GKE cluster zone used for searching an existing cluster or '
             'creating a new one. This is relevant only if --tpu is set.'))
+
+  # Optional preemptible args.
+  parser.add_argument(
+      '--preemptible',
+      default=False,
+      action='store_true',
+      help=('Use preemptible VMs for the pipeline.'))
+  parser.add_argument(
+      '--max_preemptible_tries',
+      type=int,
+      default=3,
+      help=('Maximum number of times to try running each worker (within a job) '
+            'with preemptible VMs. Regular VMs will be used (for the '
+            'particular shards assigned to that worker) after this many '
+            'preemptions.'))
 
   # Optional pipeline sharding and machine shapes.
   parser.add_argument(
