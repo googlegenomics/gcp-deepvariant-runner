@@ -1,5 +1,5 @@
 substitutions:
-    _PUBLIC_PROJECT_ID: cloud-genomics-pipelines
+    _PUBLIC_PROJECT_ID: cloud-lifesciences
 
 steps:
 - name: 'gcr.io/cloud-builders/docker'
